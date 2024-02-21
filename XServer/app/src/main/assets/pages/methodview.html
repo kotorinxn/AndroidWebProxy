@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MethodView</title>
+</head>
+<body>
+<h1>Current Class:</h1>
+<p>${class}</p>
+<h1>Current Method:</h1>
+<p>${description}</p>
+<p>${javaName}</p>
+<p>${json}</p>
+<h1>Detail:</h1>
+<#list parametersTypes as param>
+    <p>Param:${param.name}</p>
+</#list>
+<#list exceptionTypes as exception>
+    <p>Throw:${exception.name}</p>
+</#list>
+<p>Return:${returnType.name}</p>
+
+<h1>Invoke</h1>
+<p>PS: This is for test and is depreciated, You should use MitM tool to intercept/replay invoke.</p>
+<p>Each invoke on this method will be rerouted to http://127.0.0.1:8000/invoke2, so MitM tool like burp can intercept that once there's a proxy set.</p>
+<form action=/invoke method="post" target="_blank">
+    <input type=hidden name=class value=${class}>
+    <input type=hidden name=method value=${method}>
+    Instance:
+    <br>
+    <select id="thisobj" name=thisobj value=null>\n" +
+        <option value=null>Null</option>
+        <#list objList as obj>
+            <option value=${obj}>${obj}</option>
+        </#list>
+    </select>
+    <#list parametersTypes as param>
+        <p>Param${param_index}: ${param.name}</p>
+        <input type=text name=param${param_index} value=>
+        <input type=radio name=parser${param_index} value=string checked> String
+        <input type=radio name=parser${param_index} value=int> Integer
+        <input type=radio name=parser${param_index} value=byte> Byte(in Base64)
+        <input type=radio name=parser${param_index} value=object> Object
+        <input type=radio name=parser${param_index} value=null> Null
+        <br>
+    </#list>
+    <input type=submit value=Invoke>
+</form>
+<h1>Monitor</h1>
+<div id="message"></div>
+</body>
+<script type="text/javascript">
+    var websocket = null;
+    var thisObjs = {}
+    //判断当前浏览器是否支持WebSocket
+    if ('WebSocket' in window) {
+        websocket = new WebSocket(document.location.origin.replace("http","ws")+"/methodview2?javaname=${javaName}");
+    }
+    else {
+        alert('当前浏览器 Not support websocket')
+    }
+
+    //连接发生错误的回调方法
+    websocket.onerror = function () {
+        setMessageInnerHTML("WebSocket连接发生错误");
+    };
+
+    //连接成功建立的回调方法
+    websocket.onopen = function () {
+        setMessageInnerHTML("WebSocket连接成功");
+    }
+
+    //接收到消息的回调方法
+    websocket.onmessage = function (event) {
+        var evt=JSON.parse(event.data);
+        switch(evt.type){
+            case "before":
+                beforeHookedMethod(evt)
+                break;
+            case "after":
+                afterHookedMethod(evt)
+                break;
+        }
+    }
+
+    //连接关闭的回调方法
+    websocket.onclose = function () {
+        setMessageInnerHTML("WebSocket连接关闭");
+    }
+
+    //监听窗口关闭事件，当窗口关闭时，主动去关闭websocket连接，防止连接还没断开就关闭窗口，server端会抛异常。
+    window.onbeforeunload = function () {
+        closeWebSocket();
+    }
+
+    function beforeHookedMethod(evt){
+        console.log(evt)
+        if(evt.this && evt.this!="Null"){
+            thisObjs[evt.this]=evt.this
+            updatethis(thisObjs)
+        }
+        var detail = "<details open><summary>[" + evt.threadid + "]" + evt.method + "  Called</summary>"
+        var stackDetails = "<details><summary>Stack Trace</summary>"
+        evt.stack.forEach((strace)=>stackDetails += "<p> " + strace.className + "." + strace.methodName + " at " + strace.fileName + ":" + strace.lineNumber + "</p>")
+        stackDetails += "</details>"
+
+        var args = "<dl>"
+        evt.params.forEach((param, index)=>args+="<dt>Args "+index+"</dt><dd>"+param+"</dd>")
+        args+="</dl>"
+
+        detail += stackDetails
+        detail += args
+        detail += "</details>"
+        setMessageInnerHTML(detail)
+        return detail
+    }
+    function afterHookedMethod(evt){
+        console.log(evt)
+        var detail = "<details open><summary>["+evt.threadid+"]"+evt.method+"  Returned</summary>"
+        var result = ""
+        if(evt.result){
+            result = "<dl>"
+            result+= "<dt>Return</dt><dd>"+evt.result+"</dd>"
+            result+= "</dl>"
+        }
+        if(evt.throws){
+            result = "<dl>"
+            result+="<dt>Throw</dt><dd>"+evt.throws+"</dd>"
+            result+="</dl>"
+        }
+
+        detail += result
+        detail += "</details>"
+        setMessageInnerHTML(detail)
+        return detail
+    }
+    //将消息显示在网页上
+    function setMessageInnerHTML(innerHTML) {
+        document.getElementById('message').innerHTML = document.getElementById('message').innerHTML + innerHTML;
+    }
+
+    function updatethis(data) {
+        document.getElementById('thisobj').innerHTML = "<option value =null>Null</option>";
+        for (i = 0; i < data.length; i++) {
+            var obj=document.createElement("option");
+            obj.value=data[i];
+            obj.text=data[i];
+            document.getElementById('thisobj').appendChild(obj);
+        }
+    }
+    //关闭WebSocket连接
+    function closeWebSocket() {
+        websocket.close();
+    }
+
+    //发送消息
+    function send() {
+        var message = document.getElementById('text').value;
+        websocket.send(message);
+    }
+</script>
+</html>

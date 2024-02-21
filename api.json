@@ -1,0 +1,10 @@
+{
+    "web_api": [
+        {
+            "component_name": "okhttp3.Request$Builder",
+            "func_name": "url",
+            "args_fmt": "'java.lang.String'",
+            "args_name": "url"
+        }
+    ]
+}
